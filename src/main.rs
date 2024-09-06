@@ -1,6 +1,8 @@
-
+mod project;
 mod todo;
 
+use project::Project;
+use project::ProjectOperation;
 use todo::Todo;
 use todo::TodoOperation;
 
@@ -15,13 +17,52 @@ use colored::Colorize;
 
 fn main() {
     let mut exit: bool = false;
-    let mut todos: Vec<Todo> = init_todos();
-    while !exit {
-        exit = render_menu(&mut todos);
+    let mut projects: Vec<Project> = init_projects();
+    if projects.is_empty() {
+        projects.push(Project::new("Demo".to_string()));
     }
-    let s = to_string(&todos).expect("something went wrong!");
-    let _ = write_to_file(s);
-    println!("Quitting the app. Have a nice day!");
+    loop {
+        render_projects(&projects);
+        let input = get_user_input().trim().to_string();
+        let mut desc = input.to_string();
+        desc.remove(0);
+        desc = desc.trim().to_string();
+        let op = parse_main_menu_input(input);
+        match op {
+            ProjectOperation::Open | ProjectOperation::Delete => {
+                let index: usize = match desc.parse::<usize>() {
+                    Ok(val) => {
+                        if val >= projects.len() { select_active_project(&projects) }
+                        else { val }
+                    },
+                    Err(_) => select_active_project(&projects)
+                };
+                if let ProjectOperation::Open = op {
+                    while !exit {
+                        exit = render_menu(&mut projects[index].todos);
+                    }
+                } else {
+                    // DELETE
+                    projects.remove(index);
+                }
+            },
+            ProjectOperation::Create => {
+                // create new project
+                let p = Project::new(desc);
+                projects.push(p);
+            },
+            ProjectOperation::Invalid => {
+                println!("Operation not known.");
+                continue;
+            },
+            ProjectOperation::Exit => {
+                let s = to_string(&projects).expect("something went wrong!");
+                let _ = write_to_file(s);
+                println!("Quitting the app. Have a nice day!");
+                return;
+            }
+        }
+    }
 }
 
 fn load_file_content() -> io::Result<String> {
@@ -33,6 +74,39 @@ fn load_file_content() -> io::Result<String> {
     Ok(content)
 }
 
+fn parse_main_menu_input(input: String) -> ProjectOperation {
+    if input.is_empty() { return ProjectOperation::Invalid; }
+    let op: char = input.chars().next().unwrap();
+    match op {
+        '+' => ProjectOperation::Create,
+        '-' => ProjectOperation::Delete,
+        '>' => ProjectOperation::Open,
+        '!' => ProjectOperation::Exit,
+        _ => ProjectOperation::Invalid
+    }
+}
+
+fn select_active_project(projects: &Vec<Project>) -> usize {
+    loop {
+        render_projects(projects);
+        let uinpt = get_user_input().trim().to_string();
+
+        match uinpt.parse::<usize>() {
+            Ok(val) => {
+                if val >= projects.len() { continue; }
+                else { return val; }
+            },
+            Err(_) => println!("Input not recognized!"),
+        };
+    }
+}
+
+fn render_projects(projects: &Vec<Project>) {
+    for (i, p) in projects.iter().enumerate() {
+        println!("[{}] {}", i, p);
+    }
+}
+
 fn write_to_file(content: String) -> io::Result<()> {
     let mut f = File::create("todos.json")?;
 
@@ -41,11 +115,9 @@ fn write_to_file(content: String) -> io::Result<()> {
     Ok(())
 }
 
-fn init_todos() -> Vec<Todo> {
+fn init_projects() -> Vec<Project> {
     match load_file_content() {
-        Ok(val) => {
-            from_str(&val).expect("Could not parse json.")
-        },
+        Ok(val) => from_str(&val).expect("Could not parse json."),
         Err(_) => vec!()
     }
 }
